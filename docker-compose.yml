@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    container_name: pochbot-server
+    command: python3 bot.py
+    volumes:
+      - .:/code
+    env_file:
+      - key.env
+
+  
+

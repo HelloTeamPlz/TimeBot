@@ -52,7 +52,7 @@ async def s(ctx, time: str):
   new_site = StructureBot.new_Site(time)
   user = ctx.message.author
   payout = 3.6
-  insert_new_site(user, time, payout)
+  insert_new_site(str(user), time, payout)
   await ctx.send(f"> **{new_site}**")
 
 @bot.command()

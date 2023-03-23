@@ -1,2 +1,4 @@
-key.env
 temp.py
+.env
+pochBot.db
+__pycache__

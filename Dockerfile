@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 COPY . ./code
 
 #run the bot
-CMD ["python3", "bot.py"]ei
+CMD ["python3", "bot.py"]

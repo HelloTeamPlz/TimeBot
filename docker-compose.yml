@@ -5,5 +5,8 @@ services:
     command: python3 bot.py
     volumes:
       - .:/code
+    env_file:
+      - .env
     environment:
       - discbot=${discbot}
+      - dora_channel_id=${dora_channel_id}

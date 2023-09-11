@@ -1,12 +1,13 @@
+version: "1.7"
 services:
   app:
     build: .
-    container_name: pochbot-server
-    command: python3 bot.py
+    container_name: ${CONTAINER_NAME}
+    hostname: "pochbot"
     volumes:
       - .:/code
     env_file:
       - .env
-    environment:
-      - discbot=${discbot}
-      - dora_channel_id=${dora_channel_id}
+    mem_limit: "1g"
+    mem_reservation: "512m"
+    restart: 'always'

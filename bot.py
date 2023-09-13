@@ -6,10 +6,15 @@ from nextcord.utils import format_dt
 import dateutil.parser as dparser
 from database import pochBot_db as pb_db
 from datagraphing import pochbotGraphs as pb_graphs
+from PIL import Image
+import requests
+import easyocr
+import re
 
 #static keys
 timer_channel_id = os.environ.get("channel_id")
 api_key = os.environ.get("discbot")
+timer_response_channel = int(os.environ.get("timer_response_channel"))
 
 class StructureBot:
     
@@ -41,14 +46,36 @@ class StructureBot:
       for discod and return a tuple with all the desired values
       take curr unix time - future unix time + 3600 (60 minm)
       """
-      sysName = time.split(",")
-      structure_timer = dparser.parse(time, fuzzy=True)
-      short_date_time = format_dt(structure_timer, "f")
-      relative_date = format_dt(structure_timer, "R")
-      unix_structure_timer = StructureBot.to_unix_time(structure_timer)
-      current_unix_time = StructureBot.to_unix_time(datetime.now(timezone.utc))
-      seconds_till_timer = unix_structure_timer - current_unix_time + 3600
-      return (sysName[0], short_date_time, relative_date, seconds_till_timer)
+      try:
+        sysName = time.split(",")
+        structure_timer = dparser.parse(time, fuzzy=True)
+        short_date_time = format_dt(structure_timer, "f")
+        relative_date = format_dt(structure_timer, "R")
+        unix_structure_timer = StructureBot.to_unix_time(structure_timer)
+        current_unix_time = StructureBot.to_unix_time(datetime.now(timezone.utc))
+        seconds_till_timer = unix_structure_timer - current_unix_time + 3600
+        return (sysName[0], short_date_time, relative_date, seconds_till_timer)
+      except:
+        structure_timer = time
+        short_date_time = format_dt(structure_timer, "f")
+        relative_date = format_dt(structure_timer, "R")
+        unix_structure_timer = StructureBot.to_unix_time(structure_timer)
+        current_unix_time = StructureBot.to_unix_time(datetime.now(timezone.utc))
+        seconds_till_timer = unix_structure_timer - current_unix_time + 3600
+        return (short_date_time, relative_date, seconds_till_timer)
+    
+    def date_from_list(ocr_results):
+       for i in ocr_results:
+        result_ints = re.sub(r'[^0-9. ]', '', i)
+        if len(result_ints) >= 10:
+            result_ints = re.sub(r'[^0-9. ]', '', i)
+            parts = result_ints.split('.')
+            result_ints = '.'.join(parts[:-1])
+            input_string = result_ints.strip()
+            datetime_format = '%Y.%m.%d %H.%M'
+
+            parsed_datetime =  datetime.strptime(input_string, datetime_format)
+            return parsed_datetime
       
 
 bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
@@ -56,6 +83,36 @@ bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
 @bot.event
 async def on_ready():
   print('the bot is ready')
+
+@bot.command()
+async def timer(ctx, *args):
+    
+    response_channel = ctx.guild.get_channel(timer_response_channel)
+
+    # Check if an image is attached to the message
+    if len(ctx.message.attachments) == 0:
+        await ctx.send("Please attach an image to the command.",  delete_after=40)
+        return
+
+    # Get the first attached image
+    image_url = ctx.message.attachments[0].url
+
+    timer_args = ' '.join(args)
+
+    # Download and save the image
+    image = Image.open(requests.get(image_url, stream=True).raw)
+    image.save("saved_image.png")
+    reader = easyocr.Reader(['en'], gpu = False)
+    image_path = 'saved_image.png'
+    preprocessed_image = image_path
+
+    # Perform OCR on the pre-processed image
+    results = reader.readtext(preprocessed_image, detail=0)
+    #await ctx.send(results)
+    parsed_datetime = StructureBot.date_from_list(results)
+    timers = StructureBot.timer(parsed_datetime)
+  
+    await response_channel.send(f">>> {timer_args}\n{timers[0]} in {timers[1]}", delete_after=timers[2])
 
 @bot.command()
 async def p(ctx, system_name):
@@ -138,14 +195,14 @@ async def t(ctx, *, time):
   delete_after_time = timers[3] 
   await response_channel.send(f">>> {timers[0]}\n{timers[1]} in {timers[2]}", delete_after=delete_after_time)
 
-@bot.command()
-async def timer(ctx, *, time):
-  ''''
-  creates a timer for a structure in any channel where the command is called
-  '''
-  timers = StructureBot.timer(time)
-  delete_after_time = timers[3] 
-  await ctx.send(f">>> {timers[0]}\n{timers[1]} in {timers[2]}", delete_after=delete_after_time)
+# @bot.command()
+# async def timer(ctx, *, time):
+#   ''''
+#   creates a timer for a structure in any channel where the command is called
+#   '''
+#   timers = StructureBot.timer(time)
+#   delete_after_time = timers[3] 
+#   await ctx.send(f">>> {timers[0]}\n{timers[1]} in {timers[2]}", delete_after=delete_after_time)
 
 @bot.command()
 async def h(ctx):

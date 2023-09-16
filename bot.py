@@ -1,94 +1,35 @@
-from datetime import datetime, timedelta, timezone
-import discord
-from discord.ext import commands
-import os
+from discord.ext import commands, tasks
 from nextcord.utils import format_dt
-import dateutil.parser as dparser
 from database import pochBot_db as pb_db
 from datagraphing import pochbotGraphs as pb_graphs
+from structurebot import StructureBot as sb
 from PIL import Image
+import os
+import discord
 import requests
-import easyocr
-import re
+from datetime import datetime, timezone
 
 #static keys
 timer_channel_id = os.environ.get("channel_id")
 api_key = os.environ.get("discbot")
 timer_response_channel = int(os.environ.get("timer_response_channel"))
-
-class StructureBot:
-    
-    def __init__() -> None:
-        pass
-    
-    def get_channel_id(channel_name):
-      """
-      gets the channel id from env file
-      """
-      channel_id = os.environ.get(f"{channel_name}")
-      return int(channel_id)
-    
-    def to_unix_time(date_time):
-      unix_time = int(datetime.timestamp(date_time))
-      return unix_time
-
-    def new_Site(time):
-      """
-      convert input to datetime object, add 35 minutes to the time, return the new time in 24-hour format 
-      """
-      time = datetime.strptime(time, '%H:%M')
-      new_time = time + timedelta(minutes=35)
-      return new_time.strftime('%H:%M')
-
-    def timer(time):
-      """
-      given a string that looks like text, text and time stamp split on the "," parse the list to find the timestamp convert the timestamp into short and relitive date format
-      for discod and return a tuple with all the desired values
-      take curr unix time - future unix time + 3600 (60 minm)
-      """
-      try:
-        sysName = time.split(",")
-        structure_timer = dparser.parse(time, fuzzy=True)
-        short_date_time = format_dt(structure_timer, "f")
-        relative_date = format_dt(structure_timer, "R")
-        unix_structure_timer = StructureBot.to_unix_time(structure_timer)
-        current_unix_time = StructureBot.to_unix_time(datetime.now(timezone.utc))
-        seconds_till_timer = unix_structure_timer - current_unix_time + 3600
-        return (sysName[0], short_date_time, relative_date, seconds_till_timer)
-      except:
-        structure_timer = time
-        short_date_time = format_dt(structure_timer, "f")
-        relative_date = format_dt(structure_timer, "R")
-        unix_structure_timer = StructureBot.to_unix_time(structure_timer)
-        current_unix_time = StructureBot.to_unix_time(datetime.now(timezone.utc))
-        seconds_till_timer = unix_structure_timer - current_unix_time + 3600
-        return (short_date_time, relative_date, seconds_till_timer)
-    
-    def date_from_list(ocr_results):
-       for i in ocr_results:
-        result_ints = re.sub(r'[^0-9. ]', '', i)
-        if len(result_ints) >= 10:
-            result_ints = re.sub(r'[^0-9. ]', '', i)
-            parts = result_ints.split('.')
-            result_ints = '.'.join(parts[:-1])
-            input_string = result_ints.strip()
-            datetime_format = '%Y.%m.%d %H.%M'
-
-            parsed_datetime =  datetime.strptime(input_string, datetime_format)
-            return parsed_datetime
-      
+timer_dict_glob = {}
 
 bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
 
 @bot.event
 async def on_ready():
   print('the bot is ready')
+  response_channel = bot.get_channel(timer_response_channel)
+  msg = await response_channel.send('>>> Gib Timers')
+  bot.message_id = msg.id
+  remove_expired_timers.start()
 
 @bot.command()
 async def timer(ctx, *args):
-    
-    response_channel = ctx.guild.get_channel(timer_response_channel)
-
+  
+    response_channel = bot.get_channel(timer_response_channel)
+  
     # Check if an image is attached to the message
     if len(ctx.message.attachments) == 0:
         await ctx.send("Please attach an image to the command.",  delete_after=40)
@@ -96,23 +37,79 @@ async def timer(ctx, *args):
 
     # Get the first attached image
     image_url = ctx.message.attachments[0].url
-
     timer_args = ' '.join(args)
 
     # Download and save the image
     image = Image.open(requests.get(image_url, stream=True).raw)
     image.save("saved_image.png")
-    reader = easyocr.Reader(['en'], gpu = False)
-    image_path = 'saved_image.png'
-    preprocessed_image = image_path
-
-    # Perform OCR on the pre-processed image
-    results = reader.readtext(preprocessed_image, detail=0)
+    results = sb.read_img("saved_image.png")
+    parsed_datetime = sb.date_from_list(results)
+    timer_dict_glob.update({parsed_datetime: timer_args})
+    
+    #sort the timers and retrieve from the dictionary
+    sorted_timers = dict(sorted(timer_dict_glob.items()))
+    timers_msg = '\n'.join([f'> {value} {format_dt(key, "f")} in {format_dt(key, "R")}' for key, value in sorted_timers.items()])
+    
+    #check for the msg id stored earlier to edit the msg in {timer_response_channel}
+    if hasattr(bot, 'message_id'):
+      try:
+        channel = ctx.channel
+        message = await channel.fetch_message(bot.message_id)
+        
+        await message.edit(content = timers_msg)
+      except discord.NotFound:
+        msg = await response_channel.send.send(timers_msg)
+        bot.message_id = msg.id
+    else:
+      msg = await response_channel.send.send(timers_msg)
+      bot.message_id = msg.id
+        
     #await ctx.send(results)
-    parsed_datetime = StructureBot.date_from_list(results)
-    timers = StructureBot.timer(parsed_datetime)
-  
-    await response_channel.send(f">>> {timer_args}\n{timers[0]} in {timers[1]}", delete_after=timers[2])
+    #await ctx.send(timers_msg)
+    #await response_channel.send(f">>> {timer_args}\n{timers[0]} in {timers[1]}", delete_after=timers[2])
+
+@tasks.loop(seconds=60*15)
+async def remove_expired_timers():
+    response_channel = bot.get_channel(timer_response_channel)
+
+    # Get the current UTC time
+    current_unix_time = sb.to_unix_time(datetime.now(timezone.utc))
+
+    # Create a copy of keys to remove
+    keys_to_remove = [key for key in timer_dict_glob if sb.to_unix_time(key) < current_unix_time]
+
+    # Remove the keys with timestamps that have passed
+    for key in keys_to_remove:
+        del timer_dict_glob[key]
+
+    if not timer_dict_glob:
+        # If the dictionary is empty, send a default message
+        default_msg = "There are no active timers."
+        channel = response_channel
+        message = await channel.fetch_message(bot.message_id)
+        await message.edit(content=default_msg)
+    else:
+        # Sort the remaining timers by timestamp
+        sorted_timers = dict(sorted(timer_dict_glob.items()))
+
+        # Create a message with the remaining timers
+        timers_msg = '\n'.join([f'> {value} {format_dt(key, "f")} in {format_dt(key, "R")}' for key, value in sorted_timers.items()])
+
+        if hasattr(bot, 'message_id'):
+            try:
+                channel = response_channel
+                message = await channel.fetch_message(bot.message_id)
+
+                # Edit the existing message with the updated timers
+                await message.edit(content=timers_msg)
+            except discord.NotFound:
+                # If the message doesn't exist, send a new one and store its ID
+                msg = await response_channel.send(timers_msg)
+                bot.message_id = msg.id
+        else:
+            # If there's no stored message ID, send a new message and store its ID
+            msg = await response_channel.send(timers_msg)
+            bot.message_id = msg.id
 
 @bot.command()
 async def p(ctx, system_name):
@@ -133,7 +130,7 @@ async def p(ctx, system_name):
   
 @bot.command()
 async def s(ctx, time: str):
-  new_site = StructureBot.new_Site(time)
+  new_site = sb.new_Site(time)
   user = ctx.message.author
   payout = 3.4
   pb_db.insert_new_site(str(user), time, payout)
@@ -144,7 +141,7 @@ async def S(ctx, time: str):
   '''
   for site ran by other people so it wont count against you
   '''
-  new_site = StructureBot.new_Site(time)
+  new_site = sb.new_Site(time)
   await ctx.send(f"> **{new_site}**")
 
 @bot.command()
@@ -186,14 +183,31 @@ async def Tstats(ctx):
 
 @bot.command()
 async def t(ctx, *, time):
-  '''
-  creates a timer for a structure in a specified channel
-  '''
-  channel_id = int(timer_channel_id)
-  response_channel = bot.get_channel(channel_id)
-  timers = StructureBot.timer(time)
-  delete_after_time = timers[3] 
-  await response_channel.send(f">>> {timers[0]}\n{timers[1]} in {timers[2]}", delete_after=delete_after_time)
+    '''
+    creates a timer for a structure in a specified channel
+    '''
+    channel_id = int(timer_channel_id)
+    response_channel = bot.get_channel(channel_id)
+    timers_data = sb.timer(time)
+
+    timer_dict_glob.update({timers_data[1]: timers_data[0]})
+    #sort the timers and retrieve from the dictionary
+    sorted_timers = dict(sorted(timer_dict_glob.items()))
+    timers_msg = '\n'.join([f'> {value} {format_dt(key, "f")} in {format_dt(key, "R")}' for key, value in sorted_timers.items()])
+    
+    #check for the msg id stored earlier to edit the msg in {timer_response_channel}
+    if hasattr(bot, 'message_id'):
+      try:
+        channel = ctx.channel
+        message = await channel.fetch_message(bot.message_id)
+        
+        await message.edit(content = timers_msg)
+      except discord.NotFound:
+        msg = await response_channel.send.send(timers_msg)
+        bot.message_id = msg.id
+    else:
+      msg = await response_channel.send.send(timers_msg)
+      bot.message_id = msg.id
 
 # @bot.command()
 # async def timer(ctx, *, time):

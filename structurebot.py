@@ -1,10 +1,8 @@
 import os
-from nextcord.utils import format_dt
 import dateutil.parser as dparser
 from datetime import datetime, timedelta, timezone
 import easyocr
 import re
-from nextcord.utils import format_dt
 
 class StructureBot:
     
@@ -38,26 +36,28 @@ class StructureBot:
         """
         sysName = time.split(",")
         structure_timer = dparser.parse(time, fuzzy=True)
-        short_date_time = format_dt(structure_timer, "f")
-        relative_date = format_dt(structure_timer, "R")
         unix_structure_timer = StructureBot.to_unix_time(structure_timer)
-        current_unix_time = StructureBot.to_unix_time(datetime.now(timezone.utc))
+        current_unix_time = StructureBot.unix_time_now()
         seconds_till_timer = unix_structure_timer - current_unix_time + 900
-        return (sysName[0], structure_timer,seconds_till_timer)
+        return (sysName[0], unix_structure_timer,seconds_till_timer)
 
     
     def date_from_list(ocr_results):
         for i in ocr_results:
-            result_ints = re.sub(r'[^0-9. ]', '', i)
-        if len(result_ints) >= 10:
-            result_ints = re.sub(r'[^0-9. ]', '', i)
-            parts = result_ints.split('.')
-            result_ints = '.'.join(parts[:-1])
-            input_string = result_ints.strip()
-            datetime_format = '%Y.%m.%d %H.%M'
+            # Use re.search to find the date and time pattern in the string
+            match = re.search(r'\d{4}\.\d{2}\.\d{2} \d{2}\.\d{2}', i)
+            if match:
+                # Extract the matched pattern and parse it into a datetime object
+                datetime_str = match.group()
+                datetime_format = '%Y.%m.%d %H.%M'
+                try:
+                    parsed_datetime = datetime.strptime(datetime_str, datetime_format)
+                    return parsed_datetime
+                except ValueError:
+                    # Handle ValueError in case of an invalid datetime format
+                    pass
 
-            parsed_datetime =  datetime.strptime(input_string, datetime_format)
-            return parsed_datetime
+        return None
 
     def read_img(image_path):
         reader = easyocr.Reader(['en'], gpu = False)
@@ -67,6 +67,48 @@ class StructureBot:
     
     def ocr_timer(timer):
         unix_structure_timer = StructureBot.to_unix_time(timer)
-        current_unix_time = StructureBot.to_unix_time(datetime.now(timezone.utc))
+        current_unix_time = StructureBot.unix_time_now()
         seconds_till_timer = unix_structure_timer - current_unix_time + 900
         return seconds_till_timer
+    
+    def find_timers_txt(file_path):
+        try:
+            with open(file_path, 'r') as file:
+                file_contents = file.read()
+            return file_contents
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            pass 
+        
+    def find_time_left(file_path):
+        try:
+            t = StructureBot.find_timers_txt(file_path)
+            current_unix_time = StructureBot.unix_time_now()
+            timers = t.split('\n')
+            tc = timers[-1].split(':')
+            
+            time_left = int(tc[1]) - current_unix_time
+            return time_left
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            pass 
+        
+    def unix_time_now():
+        current_unix_time = StructureBot.to_unix_time(datetime.now(timezone.utc))
+        return current_unix_time
+    
+    def timer_to_dict(timer_map, results, timer_args):
+        parsed_datetime = StructureBot.date_from_list(results)
+        unix_ts = StructureBot.to_unix_time(parsed_datetime)
+        timer_map.update({unix_ts: timer_args})
+        #sort the timers and retrieve from the dictionary
+        sorted_timers = timer_map(sorted(dict.items(), reverse=True))
+        timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+        return timers_msg
+    
+    def write_to_timers_txt(msg):
+        with open('timers.txt', 'w') as file:
+            file.write(msg)
+        file.close()

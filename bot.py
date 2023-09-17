@@ -1,5 +1,4 @@
 from discord.ext import commands, tasks
-from nextcord.utils import format_dt
 from database import pochBot_db as pb_db
 from datagraphing import pochbotGraphs as pb_graphs
 from structurebot import StructureBot as sb
@@ -7,7 +6,6 @@ from PIL import Image
 import os
 import discord
 import requests
-from datetime import datetime, timezone
 
 #static keys
 timer_channel_id = os.environ.get("channel_id")
@@ -21,8 +19,11 @@ bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
 async def on_ready():
   print('the bot is ready')
   response_channel = bot.get_channel(timer_response_channel)
-  msg = await response_channel.send('>>> Gib Timers')
-  bot.message_id = msg.id
+  file_path = 'timers.txt'
+  old_timers = sb.find_timers_txt(file_path)
+  sec_left = sb.find_time_left(file_path)
+  await response_channel.send(old_timers, delete_after=sec_left)
+  await response_channel.send('timers from old bot', delete_after=sec_left)
   remove_expired_timers.start()
 
 @bot.command()
@@ -44,72 +45,68 @@ async def timer(ctx, *args):
     image.save("saved_image.png")
     results = sb.read_img("saved_image.png")
     parsed_datetime = sb.date_from_list(results)
-    timer_dict_glob.update({parsed_datetime: timer_args})
+    unix_ts = sb.to_unix_time(parsed_datetime)
+    timer_dict_glob.update({unix_ts: timer_args})
     
     #sort the timers and retrieve from the dictionary
-    sorted_timers = dict(sorted(timer_dict_glob.items()))
-    timers_msg = '\n'.join([f'> {value} {format_dt(key, "f")} in {format_dt(key, "R")}' for key, value in sorted_timers.items()])
-    
-    #check for the msg id stored earlier to edit the msg in {timer_response_channel}
-    if hasattr(bot, 'message_id'):
+    try: 
+      
+      sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+      timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+      sb.write_to_timers_txt(timers_msg)
       try:
-        channel = ctx.channel
-        message = await channel.fetch_message(bot.message_id)
-        
-        await message.edit(content = timers_msg)
-      except discord.NotFound:
-        msg = await response_channel.send.send(timers_msg)
-        bot.message_id = msg.id
-    else:
-      msg = await response_channel.send.send(timers_msg)
-      bot.message_id = msg.id
-        
-    #await ctx.send(results)
-    #await ctx.send(timers_msg)
-    #await response_channel.send(f">>> {timer_args}\n{timers[0]} in {timers[1]}", delete_after=timers[2])
-
-@tasks.loop(seconds=60*15)
+        await response_channel.purge(limit=1)
+        await response_channel.send(timers_msg)
+      except:
+        await response_channel.send(timers_msg)
+    except:
+      await ctx.send(results)
+      
+@tasks.loop(seconds=5)
 async def remove_expired_timers():
     response_channel = bot.get_channel(timer_response_channel)
 
     # Get the current UTC time
-    current_unix_time = sb.to_unix_time(datetime.now(timezone.utc))
+    current_unix_time = sb.unix_time_now()
 
     # Create a copy of keys to remove
-    keys_to_remove = [key for key in timer_dict_glob if sb.to_unix_time(key) < current_unix_time]
+    keys_to_remove = [key for key in timer_dict_glob if (key + 900) < current_unix_time]
 
     # Remove the keys with timestamps that have passed
     for key in keys_to_remove:
         del timer_dict_glob[key]
 
-    if not timer_dict_glob:
-        # If the dictionary is empty, send a default message
-        default_msg = "There are no active timers."
-        channel = response_channel
-        message = await channel.fetch_message(bot.message_id)
-        await message.edit(content=default_msg)
-    else:
-        # Sort the remaining timers by timestamp
-        sorted_timers = dict(sorted(timer_dict_glob.items()))
+    if keys_to_remove:
+        # If keys were removed, send a message and purge the channel
+        await response_channel.purge(limit=1)
 
-        # Create a message with the remaining timers
-        timers_msg = '\n'.join([f'> {value} {format_dt(key, "f")} in {format_dt(key, "R")}' for key, value in sorted_timers.items()])
-
-        if hasattr(bot, 'message_id'):
-            try:
-                channel = response_channel
-                message = await channel.fetch_message(bot.message_id)
-
-                # Edit the existing message with the updated timers
-                await message.edit(content=timers_msg)
-            except discord.NotFound:
-                # If the message doesn't exist, send a new one and store its ID
-                msg = await response_channel.send(timers_msg)
-                bot.message_id = msg.id
+        if not timer_dict_glob:
+            # If the dictionary is empty, send a default message
+            default_msg = "There are no active timers."
+            await response_channel.send(content=default_msg)
         else:
-            # If there's no stored message ID, send a new message and store its ID
-            msg = await response_channel.send(timers_msg)
-            bot.message_id = msg.id
+            # Sort the remaining timers by timestamp
+            sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+
+            # Create a message with the remaining timers
+            timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+            sb.write_to_timers_txt(timers_msg)
+            await response_channel.send(timers_msg)
+
+@bot.command()
+async def rem(ctx, key):
+    key = int(key)
+    response_channel = bot.get_channel(timer_response_channel)
+    if key in timer_dict_glob:
+        # Delete the timer associated with the given key
+        del timer_dict_glob[key]
+        await ctx.send(f'Timer with key "{key}" has been removed.')
+        sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+        timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+        await response_channel.send(timers_msg)
+        
+    else:
+        await ctx.send(f'Timer with key "{key}" not found.')
 
 @bot.command()
 async def p(ctx, system_name):
@@ -186,28 +183,18 @@ async def t(ctx, *, time):
     '''
     creates a timer for a structure in a specified channel
     '''
-    channel_id = int(timer_channel_id)
-    response_channel = bot.get_channel(channel_id)
+    response_channel = bot.get_channel(timer_response_channel)
     timers_data = sb.timer(time)
-
     timer_dict_glob.update({timers_data[1]: timers_data[0]})
     #sort the timers and retrieve from the dictionary
-    sorted_timers = dict(sorted(timer_dict_glob.items()))
-    timers_msg = '\n'.join([f'> {value} {format_dt(key, "f")} in {format_dt(key, "R")}' for key, value in sorted_timers.items()])
-    
-    #check for the msg id stored earlier to edit the msg in {timer_response_channel}
-    if hasattr(bot, 'message_id'):
-      try:
-        channel = ctx.channel
-        message = await channel.fetch_message(bot.message_id)
-        
-        await message.edit(content = timers_msg)
-      except discord.NotFound:
-        msg = await response_channel.send.send(timers_msg)
-        bot.message_id = msg.id
-    else:
-      msg = await response_channel.send.send(timers_msg)
-      bot.message_id = msg.id
+    sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+    timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+    sb.write_to_timers_txt(timers_msg)
+    try:
+      await response_channel.purge(limit=1)
+      await response_channel.send(timers_msg)
+    except:
+      await response_channel.send(timers_msg)
 
 # @bot.command()
 # async def timer(ctx, *, time):

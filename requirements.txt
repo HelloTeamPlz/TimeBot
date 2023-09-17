@@ -1,5 +1,4 @@
 discord.py==2.2.2
 matplotlib==3.7.1
-nextcord==2.4.0
 pandas==2.0.0
 python_dateutil==2.8.2

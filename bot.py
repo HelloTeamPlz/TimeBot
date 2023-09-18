@@ -18,13 +18,14 @@ bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
 @bot.event
 async def on_ready():
   print('the bot is ready')
+  remove_expired_timers.start()
   response_channel = bot.get_channel(timer_response_channel)
   file_path = 'timers.txt'
   old_timers = sb.find_timers_txt(file_path)
   sec_left = sb.find_time_left(file_path)
   await response_channel.send(old_timers, delete_after=sec_left)
   await response_channel.send('timers from old bot', delete_after=sec_left)
-  remove_expired_timers.start()
+  
 
 @bot.command()
 async def timer(ctx, *args):
@@ -53,14 +54,58 @@ async def timer(ctx, *args):
       
       sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
       timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
-      sb.write_to_timers_txt(timers_msg)
+      txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+      sb.write_to_timers_txt(txt_msg)
       try:
-        await response_channel.purge(limit=1)
+        await response_channel.purge(limit=2)
         await response_channel.send(timers_msg)
       except:
         await response_channel.send(timers_msg)
     except:
       await ctx.send(results)
+@bot.command()
+async def bulk_timer(ctx, *args):
+  
+    response_channel = bot.get_channel(timer_response_channel)
+    
+  
+    # Check if an image is attached to the message
+    if len(ctx.message.attachments) == 0:
+        await ctx.send("Please attach an image to the command.",  delete_after=40)
+        return
+
+    # Get the first attached image
+    attachment = ctx.message.attachments[0]
+    url = attachment.url
+    response = requests.get(url)
+    if response.status_code == 200:
+      with open('bulk.txt', 'wb') as file:
+          file.write(response.content)
+          file.close()
+    
+    with open('bulk.txt', 'r') as file:
+      for line in file:
+        parts = line.strip().split(':')
+        if len(parts) == 2:
+          timer_dict_glob.update({int(parts[0]):parts[1]})
+    file.close()
+        
+    
+    #sort the timers and retrieve from the dictionary
+    try: 
+      
+      sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+      timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+      txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+      sb.write_to_timers_txt(txt_msg)
+      try:
+        await response_channel.purge(limit=2)
+        await ctx.send('adding timers')
+        #await response_channel.send(timers_msg)
+      except:
+        await ctx.send('adding timers', delete_after=40)
+    except:
+      await ctx.send('add it the hard way',delete_after=40)
       
 @tasks.loop(seconds=5)
 async def remove_expired_timers():
@@ -78,7 +123,12 @@ async def remove_expired_timers():
 
     if keys_to_remove:
         # If keys were removed, send a message and purge the channel
-        await response_channel.purge(limit=1)
+        await response_channel.purge(limit=2)
+        sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+        timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+        txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+        txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+        sb.write_to_timers_txt(txt_msg)
 
         if not timer_dict_glob:
             # If the dictionary is empty, send a default message
@@ -90,7 +140,8 @@ async def remove_expired_timers():
 
             # Create a message with the remaining timers
             timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
-            sb.write_to_timers_txt(timers_msg)
+            txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+            sb.write_to_timers_txt(txt_msg)
             await response_channel.send(timers_msg)
 
 @bot.command()
@@ -103,6 +154,8 @@ async def rem(ctx, key):
         await ctx.send(f'Timer with key "{key}" has been removed.')
         sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
         timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+        txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+        sb.write_to_timers_txt(txt_msg)
         await response_channel.send(timers_msg)
         
     else:
@@ -189,9 +242,10 @@ async def t(ctx, *, time):
     #sort the timers and retrieve from the dictionary
     sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
     timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
-    sb.write_to_timers_txt(timers_msg)
+    txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+    sb.write_to_timers_txt(txt_msg)
     try:
-      await response_channel.purge(limit=1)
+      await response_channel.purge(limit=2)
       await response_channel.send(timers_msg)
     except:
       await response_channel.send(timers_msg)

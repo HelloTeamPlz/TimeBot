@@ -70,12 +70,19 @@ class StructureBot:
         current_unix_time = StructureBot.unix_time_now()
         seconds_till_timer = unix_structure_timer - current_unix_time + 900
         return seconds_till_timer
-    
+
     def find_timers_txt(file_path):
+        result = ''
         try:
             with open(file_path, 'r') as file:
-                file_contents = file.read()
-            return file_contents
+            # Iterate through each line in the file
+                for line in file:
+                    # Split the line on ":"
+                    parts = line.strip().split(':')
+                    if len(parts) == 2:
+                        # Add the two parts separated by ":" to the result
+                        result += f"> {parts[1]} <t:{parts[0]}:f> in <t:{parts[0]}:R>\n"
+            return result
         except FileNotFoundError:
             pass
         except Exception as e:

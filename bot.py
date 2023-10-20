@@ -31,6 +31,7 @@ async def on_ready():
 async def timer(ctx, *args):
   
     response_channel = bot.get_channel(timer_response_channel)
+    user = ctx.message.author
   
     # Check if an image is attached to the message
     if len(ctx.message.attachments) == 0:
@@ -44,25 +45,27 @@ async def timer(ctx, *args):
     # Download and save the image
     image = Image.open(requests.get(image_url, stream=True).raw)
     image.save("saved_image.png")
-    results = sb.read_img("saved_image.png")
-    parsed_datetime = sb.date_from_list(results)
-    unix_ts = sb.to_unix_time(parsed_datetime)
-    timer_dict_glob.update({unix_ts: timer_args})
-    
-    #sort the timers and retrieve from the dictionary
-    try: 
-      
-      sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
-      timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
-      txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
-      sb.write_to_timers_txt(txt_msg)
-      try:
-        await response_channel.purge(limit=2)
-        await response_channel.send(timers_msg)
+    try:
+      results = sb.read_img("saved_image.png")
+      parsed_datetime = sb.date_from_list(results)
+      unix_ts = sb.to_unix_time(parsed_datetime)
+      timer_dict_glob.update({unix_ts: timer_args})
+      try: 
+        #sort the timers and retrieve from the dictionary
+        sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+        timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+        txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+        sb.write_to_timers_txt(txt_msg)
+        try:
+          await response_channel.purge(limit=2)
+          await response_channel.send(timers_msg)
+        except:
+          await response_channel.send(timers_msg)
       except:
-        await response_channel.send(timers_msg)
+        await ctx.send(results)
     except:
-      await ctx.send(results)
+      await ctx.send(f'Cant read the date plz add manualy with !t command {user.mention}',delete_after=40)
+      
 @bot.command()
 async def bulk_timer(ctx, *args):
   
@@ -93,9 +96,7 @@ async def bulk_timer(ctx, *args):
     
     #sort the timers and retrieve from the dictionary
     try: 
-      
       sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
-      timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
       txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
       sb.write_to_timers_txt(txt_msg)
       try:
@@ -168,9 +169,10 @@ async def p(ctx, system_name):
   """
   with open('sys.txt') as file:
     contents = file.read()
-    search_word = system_name
+    search_word = system_name.lower()
     if search_word in contents:
         file.close()
+        system_name =  system_name.lower()
         embed = discord.Embed(description=f"Here's the exit map for {system_name}")
         embed.set_image(url=f'https://pochven.goryn.wtf/img/{system_name}.png')
         await ctx.send(embed=embed)
@@ -248,6 +250,7 @@ async def t(ctx, *, time):
       await response_channel.purge(limit=2)
       await response_channel.send(timers_msg)
     except:
+      await response_channel.purge(limit=2)
       await response_channel.send(timers_msg)
 
 # @bot.command()

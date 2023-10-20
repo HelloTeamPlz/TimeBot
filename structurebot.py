@@ -34,13 +34,25 @@ class StructureBot:
         for discod and return a tuple with all the desired values
         take curr unix time - future unix time + 900 (15 minm)
         """
-        sysName = time.split(",")
-        structure_timer = dparser.parse(time, fuzzy=True)
-        unix_structure_timer = StructureBot.to_unix_time(structure_timer)
-        current_unix_time = StructureBot.unix_time_now()
-        seconds_till_timer = unix_structure_timer - current_unix_time + 900
-        return (sysName[0], unix_structure_timer,seconds_till_timer)
+        pattern = r'(\d{4}[.-]\d{2}[.-]\d{2} \d{2}[.:]\d{2}[.:]\d{2})'
 
+        # Search for the pattern in the message
+        match = re.search(pattern, time)
+
+        if match:
+            # Extract the matched date and time string
+            date_time_str = match.group(1)
+
+            # Convert the date and time string to a datetime object
+            date_time_str = re.sub(r'[-.]', '.', date_time_str)
+            dt_structure_timer = datetime.strptime(date_time_str, '%Y.%m.%d %H:%M:%S')
+            unix_structure_timer = StructureBot.to_unix_time(dt_structure_timer)
+            # Remove the date and time portion from the message
+            cleaned_message = re.sub(pattern, '', time).strip()
+
+            return (cleaned_message, unix_structure_timer)
+        else:
+            return print('f')
     
     def date_from_list(ocr_results):
         for i in ocr_results:

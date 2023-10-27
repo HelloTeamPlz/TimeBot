@@ -15,16 +15,27 @@ timer_dict_glob = {}
 
 bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
 
+def get_old_timers(file_path):
+  try: 
+    with open(file_path, 'r') as file:
+        for line in file:
+            parts = line.strip().split(':')
+            if len(parts) == 2:
+              timer_dict_glob.update({int(parts[0]):parts[1]})
+        file.close()
+  except:
+    pass
+
 @bot.event
 async def on_ready():
   print('the bot is ready')
   remove_expired_timers.start()
   response_channel = bot.get_channel(timer_response_channel)
   file_path = 'timers.txt'
-  old_timers = sb.find_timers_txt(file_path)
-  sec_left = sb.find_time_left(file_path)
-  await response_channel.send(old_timers, delete_after=sec_left)
-  await response_channel.send('timers from old bot', delete_after=sec_left)
+  get_old_timers(file_path)
+  sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+  timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+  await response_channel.send(timers_msg)
   
 
 @bot.command()
@@ -116,7 +127,7 @@ async def remove_expired_timers():
     current_unix_time = sb.unix_time_now()
 
     # Create a copy of keys to remove
-    keys_to_remove = [key for key in timer_dict_glob if (key + 900) < current_unix_time]
+    keys_to_remove = [key for key in timer_dict_glob if (key + 3600) < current_unix_time]
 
     # Remove the keys with timestamps that have passed
     for key in keys_to_remove:

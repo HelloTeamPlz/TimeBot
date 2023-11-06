@@ -35,6 +35,7 @@ async def on_ready():
   get_old_timers(file_path)
   sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
   timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+  await response_channel.purge(limit=5)
   await response_channel.send(timers_msg)
   
 
@@ -64,7 +65,7 @@ async def timer(ctx, *args):
       try: 
         #sort the timers and retrieve from the dictionary
         sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
-        timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+        timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> `{parsed_datetime} `ID: `{key}`' for key, value in sorted_timers.items()])
         txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
         sb.write_to_timers_txt(txt_msg)
         try:
@@ -139,7 +140,6 @@ async def remove_expired_timers():
         sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
         timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
         txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
-        txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
         sb.write_to_timers_txt(txt_msg)
 
         if not timer_dict_glob:
@@ -168,8 +168,11 @@ async def rem(ctx, key):
         timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
         txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
         sb.write_to_timers_txt(txt_msg)
-        await response_channel.send(timers_msg)
-        
+        await response_channel.purge(limit=5)
+        try: 
+          await response_channel.send(timers_msg)
+        except:
+          await response_channel.send('There are no active timers.')
     else:
         await ctx.send(f'Timer with key "{key}" not found.')
 

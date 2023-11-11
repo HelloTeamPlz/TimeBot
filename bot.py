@@ -6,6 +6,7 @@ from PIL import Image
 import os
 import discord
 import requests
+from datetime import datetime, timedelta
 
 #static keys
 timer_channel_id = os.environ.get("channel_id")
@@ -38,6 +39,25 @@ async def on_ready():
   await response_channel.purge(limit=5)
   await response_channel.send(timers_msg)
   
+@bot.command()
+async def t(ctx, *, time):
+    '''
+    creates a timer for a structure in a specified channel
+    '''
+    response_channel = bot.get_channel(timer_response_channel)
+    timers_data = sb.timer(time)
+    timer_dict_glob.update({timers_data[1]: timers_data[0]})
+    #sort the timers and retrieve from the dictionary
+    sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+    timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+    txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+    sb.write_to_timers_txt(txt_msg)
+    try:
+      await response_channel.purge(limit=2)
+      await response_channel.send(timers_msg)
+    except:
+      await response_channel.purge(limit=2)
+      await response_channel.send(timers_msg)
 
 @bot.command()
 async def timer(ctx, *args):
@@ -65,7 +85,7 @@ async def timer(ctx, *args):
       try: 
         #sort the timers and retrieve from the dictionary
         sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
-        timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> `{parsed_datetime} `ID: `{key}`' for key, value in sorted_timers.items()])
+        timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
         txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
         sb.write_to_timers_txt(txt_msg)
         try:
@@ -77,7 +97,32 @@ async def timer(ctx, *args):
         await ctx.send(results)
     except:
       await ctx.send(f'Cant read the date plz add manualy with !t command {user.mention}',delete_after=40)
-      
+
+@bot.command()
+async def td(ctx, str_nm="", days=0, hours=0, minutes=0):
+    response_channel = bot.get_channel(timer_response_channel)
+    user = ctx.message.author
+    try:
+          # Convert days, hours, and minutes to seconds
+          delta_seconds = (days * 86400) + (hours * 3600) + (minutes * 60)
+          # Get the current UTC time
+          utc_now = datetime.utcnow()
+          # Calculate the UTC epoch timestamp by adding the delta to the current time
+          utc_epoch_ts = int((utc_now + timedelta(seconds=delta_seconds)).timestamp())
+          timer_dict_glob.update({utc_epoch_ts: str_nm})
+          sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
+          timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
+          txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
+          sb.write_to_timers_txt(txt_msg)
+          try:
+            await response_channel.purge(limit=2)
+            await response_channel.send(timers_msg)
+          except:
+            pass
+
+    except ValueError:
+          await ctx.send(f'this command needs <structure name> <days> <hours> <minutes>{user.mention}',delete_after=40)
+
 @bot.command()
 async def bulk_timer(ctx, *args):
   
@@ -195,88 +240,6 @@ async def p(ctx, system_name):
         pass
   
 @bot.command()
-async def s(ctx, time: str):
-  new_site = sb.new_Site(time)
-  user = ctx.message.author
-  payout = 3.4
-  pb_db.insert_new_site(str(user), time, payout)
-  await ctx.send(f"> **{new_site}**")
-
-@bot.command()
-async def S(ctx, time: str):
-  '''
-  for site ran by other people so it wont count against you
-  '''
-  new_site = sb.new_Site(time)
-  await ctx.send(f"> **{new_site}**")
-
-@bot.command()
-async def stats(ctx, *, user=None):
-    if user is None:
-        user = ctx.message.author
-    else:
-        pass
-    
-    df = pb_db.individual_sites_done(user)
-    user = df['Name'][0]
-    sites_ran = df['Payout'].value_counts()
-    profit = 3.4 * sites_ran.sum()
-    tax = profit * .025
-
-    embed = discord.Embed(title=f"Sites Run by {user}", description=f'Sites Run: {sites_ran.sum()}')
-    embed.add_field(name='Total Payout', value=f'{profit:.2f} Bil')
-    embed.add_field(name='Tax', value=f'{tax:.3f} Bil')
-
-    file = pb_graphs.individual_sites_graph(df)
-    image = discord.File(file, filename='graph.png')
-    embed.set_image(url=f'attachment://graph.png')
-    await ctx.send(file=image, embed=embed)
-
-@bot.command()
-async def Tstats(ctx):
-  df = pb_db.total_site_done()
-  payout = 3.4
-  df = df.drop('Date', axis = 1)
-  df['IskMade'],df['Tax'] = df['TotalPayout'] * payout, df['TotalPayout'] * payout *.025
-  df_sorted = df.sort_values(by='IskMade', ascending=False).to_string(index=False)
-
-  embed = discord.Embed(title=f"Total Payouts", description= f"""```{df_sorted}```""")
-
-  file = pb_graphs.total_sites_done_total(df)
-  image = discord.File(file, filename='graph.png')
-  embed.set_image(url=f'attachment://graph.png')
-  await ctx.send(file=image, embed=embed)
-
-@bot.command()
-async def t(ctx, *, time):
-    '''
-    creates a timer for a structure in a specified channel
-    '''
-    response_channel = bot.get_channel(timer_response_channel)
-    timers_data = sb.timer(time)
-    timer_dict_glob.update({timers_data[1]: timers_data[0]})
-    #sort the timers and retrieve from the dictionary
-    sorted_timers = dict(sorted(timer_dict_glob.items(), reverse=True))
-    timers_msg = '\n'.join([f'> {value} <t:{key}:f> in <t:{key}:R> ID: {key}' for key, value in sorted_timers.items()])
-    txt_msg = '\n'.join([f'{key}:{value}'for key,value in sorted_timers.items()])
-    sb.write_to_timers_txt(txt_msg)
-    try:
-      await response_channel.purge(limit=2)
-      await response_channel.send(timers_msg)
-    except:
-      await response_channel.purge(limit=2)
-      await response_channel.send(timers_msg)
-
-# @bot.command()
-# async def timer(ctx, *, time):
-#   ''''
-#   creates a timer for a structure in any channel where the command is called
-#   '''
-#   timers = StructureBot.timer(time)
-#   delete_after_time = timers[3] 
-#   await ctx.send(f">>> {timers[0]}\n{timers[1]} in {timers[2]}", delete_after=delete_after_time)
-
-@bot.command()
 async def h(ctx):
   commands = {
       's' : 'Add 35 minutes to the time in 24hr format and adds a site ran to your total',
@@ -284,8 +247,6 @@ async def h(ctx):
       't': 'Creates a timer for a structure in a specified channel no matter where the timer is entered',
       'stats': 'Gives the # of sites ran by a user',
       'p': 'Returns a map of pochven and how close the wormhole will bring you only works for high and lowsec systems',
-      'S': 'Add 35 minutes to the time in 24hr format if someone else runs the spawn and wont add it to your total',
-      'Tstats': 'Shows all the sites ran by everyone and the relevent stats'
   }
   command_txt = ">>> "
   for key, value in commands.items():
